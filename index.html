@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconocimiento Inteligente de Figuras Geométricas</title>
+    <!-- Tailwind CSS para diseño moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        .canvas-container {
+            touch-action: none;
+        }
+        #drawCanvas {
+            cursor: crosshair;
+            background-color: #ffffff;
+        }
+        /* Transiciones suaves */
+        .btn-action {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-action:hover {
+            transform: translateY(-1px);
+        }
+        .btn-action:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-4 md:p-8">
+
+    <!-- Encabezado Principal -->
+    <header class="max-w-6xl mx-auto w-full mb-6">
+        <div class="flex flex-col md:flex-row justify-between items-center border-b border-slate-200 pb-4 gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">
+                    <i class="fa-solid fa-shapes text-slate-800"></i> Reconocimiento de Figuras en Tiempo Real
+                </h1>
+                <p class="text-sm text-slate-600 mt-1">Dibuja una figura geométrica con el mouse o la pantalla táctil y el sistema la clasificará automáticamente con OpenCV.js.</p>
+            </div>
+            
+            <!-- Estado de Carga de OpenCV -->
+            <div id="opencvStatus" class="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg font-medium shadow-sm">
+                <i class="fa-solid fa-circle-notch fa-spin text-amber-600"></i>
+                <span>Cargando OpenCV.js...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Principal Grid -->
+    <main class="max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start flex-1">
+        
+        <!-- Columna Izquierda: Lienzo de Dibujo -->
+        <section class="lg:col-span-7 flex flex-col gap-3 w-full">
+            <div class="flex items-center justify-between bg-white p-3 border border-slate-200 rounded-xl shadow-sm">
+                <div class="flex items-center gap-2">
+                    <button id="btnPen" class="btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-pen text-xs"></i> Lápiz
+                    </button>
+                    <button id="btnEraser" class="btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-1.5">
+                        <i class="fa-solid fa-eraser text-xs"></i> Borrador
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button id="btnUndo" class="btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-1" title="Deshacer trazo">
+                        <i class="fa-solid fa-rotate-left"></i> Deshacer
+                    </button>
+                    <button id="btnClear" class="btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 flex items-center gap-1">
+                        <i class="fa-solid fa-trash-can"></i> Limpiar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Contenedor del Canvas -->
+            <div class="canvas-container relative bg-white border-2 border-slate-300 rounded-2xl shadow-sm overflow-hidden w-full aspect-square max-h-[500px]">
+                <canvas id="drawCanvas" class="w-full h-full block"></canvas>
+                
+                <!-- Overlay de Instrucción inicial -->
+                <div id="canvasOverlay" class="absolute inset-0 pointer-events-none flex items-center justify-center text-slate-400 text-sm font-medium">
+                    <p class="bg-white/80 backdrop-blur px-4 py-2 rounded-full border border-slate-200 shadow-sm">
+                        <i class="fa-solid fa-hand-pointer mr-1"></i> Traza una figura dentro del recuadro
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs text-slate-500 px-1">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="chkAutoProcess" checked class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                    <span>Reconocimiento automático al soltar el trazo</span>
+                </label>
+                <button id="btnRecognize" class="btn-action bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-lg shadow flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Reconocer Figura
+                </button>
+            </div>
+        </section>
+
+        <!-- Columna Derecha: Panel de Diagnóstico -->
+        <section class="lg:col-span-5 flex flex-col gap-4 w-full">
+            
+            <!-- Card de Resultado -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Resultado de la Clasificación</h2>
+                
+                <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                    <div>
+                        <div id="shapeTitle" class="text-3xl font-black tracking-tight text-slate-900">NULL</div>
+                        <div id="shapeDescription" class="text-xs text-slate-500 mt-0.5">Espere o dibuje una figura</div>
+                    </div>
+                    <div id="shapeBadge" class="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-800 text-2xl font-bold shadow-inner">
+                        ?
+                    </div>
+                </div>
+
+                <!-- Métricas Extraídas -->
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase block">Vértices Detectados</span>
+                        <span id="metricVertices" class="text-xl font-extrabold text-slate-800">0</span>
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase block">Circularidad (4πA/P²)</span>
+                        <span id="metricCircularity" class="text-xl font-extrabold text-slate-800">0.00</span>
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase block">Área Estimada</span>
+                        <span id="metricArea" class="text-xl font-extrabold text-slate-800">0 px²</span>
+                    </div>
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase block">Perímetro</span>
+                        <span id="metricPerimeter" class="text-xl font-extrabold text-slate-800">0 px</span>
+                    </div>
+                </div>
+
+                <!-- Indicador de Confianza -->
+                <div>
+                    <div class="flex justify-between items-center text-xs font-semibold mb-1">
+                        <span class="text-slate-600">Nivel de Confianza / Ajuste:</span>
+                        <span id="confidenceText" class="text-slate-900 font-bold">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
+                        <div id="confidenceBar" class="bg-slate-900 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card de Autocorrección / Boceto Limpio -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Autocorrección Vectorial Ajustada</h3>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center aspect-video relative overflow-hidden">
+                    <canvas id="correctedCanvas" class="max-w-full max-h-full"></canvas>
+                    <span id="correctedPlaceholder" class="text-xs text-slate-400 font-medium absolute">Sin figura procesada</span>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <footer class="max-w-6xl mx-auto w-full text-center text-xs text-slate-400 border-t border-slate-200 pt-4 mt-6">
+        Demostración Algorítmica con OpenCV.js · Reconocimiento Morfológico e Interpretación de Trazo
+    </footer>
+
+    <!-- Carga Asíncrona de OpenCV.js -->
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+
+    <script>
+        // === ESTADO GLOBAL ===
+        let isOpenCvLoaded = false;
+        let isDrawing = false;
+        let activeTool = 'pen'; // 'pen' | 'eraser'
+        let strokeHistory = [];
+        
+        const canvas = document.getElementById('drawCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const correctedCanvas = document.getElementById('correctedCanvas');
+        const correctedCtx = correctedCanvas.getContext('2d');
+        const overlay = document.getElementById('canvasOverlay');
+
+        // Configuración de tamaño del Canvas
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            
+            // Guardar imagen actual antes de redimensionar
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0);
+
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+
+            // Restaurar fondo blanco y trazos
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(tempCanvas, 0, 0);
+
+            // Ajustar canvas de vista previa corregida
+            correctedCanvas.width = 240;
+            correctedCanvas.height = 140;
+            resetCorrectedCanvas();
+        }
+
+        function resetCorrectedCanvas() {
+            correctedCtx.fillStyle = '#f8fafc';
+            correctedCtx.fillRect(0, 0, correctedCanvas.width, correctedCanvas.height);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // === NOTIFICACIÓN DE OPENCV.JS ===
+        function onOpenCvReady() {
+            isOpenCvLoaded = true;
+            const statusEl = document.getElementById('opencvStatus');
+            statusEl.className = "flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-3 py-2 rounded-lg font-medium shadow-sm";
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i><span>OpenCV.js Listo</span>`;
+        }
+
+        // === EVENTOS DE DIBUJO (MOUSE / TOUCH) ===
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function saveState() {
+            if (strokeHistory.length >= 10) strokeHistory.shift();
+            strokeHistory.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        }
+
+        function startDrawing(e) {
+            e.preventDefault();
+            saveState();
+            isDrawing = true;
+            overlay.style.display = 'none';
+
+            const pos = getPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+
+            ctx.lineWidth = activeTool === 'pen' ? 6 : 24;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = activeTool === 'pen' ? '#0f172a' : '#ffffff';
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+
+        function stopDrawing(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            ctx.closePath();
+
+            // Procesar si la casilla automática está activada
+            if (document.getElementById('chkAutoProcess').checked) {
+                processImageWithOpenCV();
+            }
+        }
+
+        // Listeners de eventos
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseleave', stopDrawing);
+
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', stopDrawing);
+
+        // Controles de la barra de herramientas
+        document.getElementById('btnPen').addEventListener('click', () => {
+            activeTool = 'pen';
+            document.getElementById('btnPen').className = 'btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white flex items-center gap-1.5 shadow-sm';
+            document.getElementById('btnEraser').className = 'btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-1.5';
+        });
+
+        document.getElementById('btnEraser').addEventListener('click', () => {
+            activeTool = 'eraser';
+            document.getElementById('btnEraser').className = 'btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white flex items-center gap-1.5 shadow-sm';
+            document.getElementById('btnPen').className = 'btn-action px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-1.5';
+        });
+
+        document.getElementById('btnUndo').addEventListener('click', () => {
+            if (strokeHistory.length > 0) {
+                const previousState = strokeHistory.pop();
+                ctx.putImageData(previousState, 0, 0);
+                if (document.getElementById('chkAutoProcess').checked) {
+                    processImageWithOpenCV();
+                }
+            }
+        });
+
+        document.getElementById('btnClear').addEventListener('click', () => {
+            saveState();
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            overlay.style.display = 'flex';
+            resetMetrics();
+        });
+
+        document.getElementById('btnRecognize').addEventListener('click', () => {
+            processImageWithOpenCV();
+        });
+
+        function resetMetrics() {
+            document.getElementById('shapeTitle').innerText = 'NULL';
+            document.getElementById('shapeDescription').innerText = 'Lienzo vacío';
+            document.getElementById('shapeBadge').innerText = '?';
+            document.getElementById('metricVertices').innerText = '0';
+            document.getElementById('metricCircularity').innerText = '0.00';
+            document.getElementById('metricArea').innerText = '0 px²';
+            document.getElementById('metricPerimeter').innerText = '0 px';
+            document.getElementById('confidenceText').innerText = '0%';
+            document.getElementById('confidenceBar').style.width = '0%';
+            document.getElementById('correctedPlaceholder').style.display = 'block';
+            resetCorrectedCanvas();
+        }
+
+        // === PROCESAMIENTO DE RECONOCIMIENTO CON OPENCV.JS ===
+        function processImageWithOpenCV() {
+            if (!isOpenCvLoaded) {
+                alert('OpenCV.js aún se está cargando. Espere un segundo e inténtelo nuevamente.');
+                return;
+            }
+
+            // Obtener imagen del Canvas a OpenCV Mat
+            let src = cv.imread(canvas);
+            let gray = new cv.Mat();
+            let blurred = new cv.Mat();
+            let thresh = new cv.Mat();
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+
+            // 1. Preprocesamiento
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+            cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+            // Invertir para que el trazo negro sea blanco sobre fondo negro
+            cv.threshold(blurred, thresh, 200, 255, cv.THRESH_BINARY_INV);
+
+            // 2. Extracción de Contornos
+            cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            if (contours.size() === 0) {
+                resetMetrics();
+                src.delete(); gray.delete(); blurred.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+                return;
+            }
+
+            // Encontrar el contorno de mayor área
+            let maxArea = 0;
+            let bestContourIdx = -1;
+            for (let i = 0; i < contours.size(); ++i) {
+                let cnt = contours.get(i);
+                let area = cv.contourArea(cnt);
+                if (area > maxArea) {
+                    maxArea = area;
+                    bestContourIdx = i;
+                }
+            }
+
+            // Ignorar pequeños trazos o ruido
+            if (maxArea < 150 || bestContourIdx === -1) {
+                resetMetrics();
+                src.delete(); gray.delete(); blurred.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+                return;
+            }
+
+            let cnt = contours.get(bestContourIdx);
+            let perimeter = cv.arcLength(cnt, true);
+
+            // 3. Aproximación Poligonal (Ramer-Douglas-Peucker)
+            let approx = new cv.Mat();
+            let epsilon = 0.035 * perimeter;
+            cv.approxPolyDP(cnt, approx, epsilon, true);
+
+            let vertices = approx.rows;
+            let circularity = (4 * Math.PI * maxArea) / (perimeter * perimeter);
+
+            // 4. Lógica de Clasificación
+            let shapeName = "NULL";
+            let shapeDesc = "Trazo indeterminado";
+            let iconBadge = "?";
+            let confidence = 0;
+
+            if (circularity > 0.78 && vertices >= 5) {
+                shapeName = "CIRCULO";
+                shapeDesc = "Figura curva cerrada y simétrica";
+                iconBadge = "◯";
+                confidence = Math.min(99, Math.round(circularity * 100));
+            } else if (vertices === 3) {
+                shapeName = "TRIANGULO";
+                shapeDesc = "Polígono de 3 lados y 3 vértices";
+                iconBadge = "▲";
+                confidence = 92;
+            } else if (vertices === 4) {
+                let rect = cv.boundingRect(approx);
+                let aspectRatio = rect.width / parseFloat(rect.height);
+                
+                if (aspectRatio >= 0.88 && aspectRatio <= 1.12) {
+                    shapeName = "CUADRO";
+                    shapeDesc = "Cuadrilátero regular de lados iguales";
+                    iconBadge = "■";
+                    confidence = 95;
+                } else {
+                    shapeName = "TRAPECIO";
+                    shapeDesc = "Cuadrilátero/Rectángulo alargado";
+                    iconBadge = "▭";
+                    confidence = 88;
+                }
+            } else if (vertices >= 5 && vertices <= 10 && circularity < 0.6) {
+                shapeName = "ESTRELLA";
+                shapeDesc = "Polígono estrellado / Múltiples puntas";
+                iconBadge = "★";
+                confidence = 85;
+            } else if (vertices > 4 && circularity >= 0.6) {
+                shapeName = "CIRCULO";
+                shapeDesc = "Aproximación circular";
+                iconBadge = "◯";
+                confidence = Math.round(circularity * 90);
+            }
+
+            // 5. Actualización de la Interfaz
+            document.getElementById('shapeTitle').innerText = shapeName;
+            document.getElementById('shapeDescription').innerText = shapeDesc;
+            document.getElementById('shapeBadge').innerText = iconBadge;
+            document.getElementById('metricVertices').innerText = vertices;
+            document.getElementById('metricCircularity').innerText = circularity.toFixed(2);
+            document.getElementById('metricArea').innerText = Math.round(maxArea) + ' px²';
+            document.getElementById('metricPerimeter').innerText = Math.round(perimeter) + ' px';
+            document.getElementById('confidenceText').innerText = confidence + '%';
+            document.getElementById('confidenceBar').style.width = confidence + '%';
+
+            // 6. Dibujar Autocorrección Vectorial Limpia
+            renderVectorCorrection(shapeName, approx, cnt);
+
+            // Liberar memoria de matrices
+            approx.delete();
+            src.delete(); gray.delete(); blurred.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+        }
+
+        // Renderizado del dibujo corregido vectorialmente
+        function renderVectorCorrection(shape, approx, cnt) {
+            document.getElementById('correctedPlaceholder').style.display = 'none';
+            resetCorrectedCanvas();
+
+            correctedCtx.strokeStyle = '#0f172a';
+            correctedCtx.fillStyle = '#e2e8f0';
+            correctedCtx.lineWidth = 3;
+
+            const w = correctedCanvas.width;
+            const h = correctedCanvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+
+            correctedCtx.beginPath();
+
+            if (shape === 'CIRCULO') {
+                correctedCtx.arc(cx, cy, 40, 0, 2 * Math.PI);
+            } else if (shape === 'TRIANGULO') {
+                correctedCtx.moveTo(cx, cy - 40);
+                correctedCtx.lineTo(cx + 40, cy + 35);
+                correctedCtx.lineTo(cx - 40, cy + 35);
+                correctedCtx.closePath();
+            } else if (shape === 'CUADRO') {
+                correctedCtx.rect(cx - 35, cy - 35, 70, 70);
+            } else if (shape === 'TRAPECIO') {
+                correctedCtx.rect(cx - 50, cy - 30, 100, 60);
+            } else if (shape === 'ESTRELLA') {
+                let spikes = 5;
+                let outerRadius = 45;
+                let innerRadius = 20;
+                let rot = Math.PI / 2 * 3;
+                let step = Math.PI / spikes;
+
+                correctedCtx.moveTo(cx, cy - outerRadius);
+                for (let i = 0; i < spikes; i++) {
+                    let x = cx + Math.cos(rot) * outerRadius;
+                    let y = cy + Math.sin(rot) * outerRadius;
+                    correctedCtx.lineTo(x, y);
+                    rot += step;
+
+                    x = cx + Math.cos(rot) * innerRadius;
+                    y = cy + Math.sin(rot) * innerRadius;
+                    correctedCtx.lineTo(x, y);
+                    rot += step;
+                }
+                correctedCtx.closePath();
+            } else {
+                // Dibujar la aproximación del contorno real escalado
+                correctedCtx.fillText('No reconocido', cx - 35, cy);
+                return;
+            }
+
+            correctedCtx.fill();
+            correctedCtx.stroke();
+        }
+
+        // Inicialización
+        window.onload = () => {
+            resizeCanvas();
+        };
+    </script>
+</body>
+</html>
